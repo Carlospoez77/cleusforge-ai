@@ -22,7 +22,7 @@ const profileConfig: Record<Profile, { label: string; model?: string; system: st
   fast: { label: 'Modo Rápido', model: process.env.OPENAI_MODEL_FAST, system: 'Responde de forma breve, clara y accionable. Evita rodeos.' },
   smartest: { label: 'Razonamiento Profundo', model: process.env.OPENAI_MODEL_SMARTEST, system: 'Analiza supuestos y alternativas. Responde de forma objetiva, directa y sin sermones genéricos.' },
   coding: { label: 'Codificación', model: process.env.OPENAI_MODEL_CODING, system: 'Actúa como ingeniero senior. Da código reproducible, pruebas y mitigaciones de seguridad.' },
-  agent: { label: 'Agente Autónomo', model: process.env.OPENAI_MODEL_AGENT, system: 'Planifica, usa herramientas cuando aporten valor y devuelve resultados verificables. Narra brevemente cada acción.' },
+  agent: { label: 'Agente Autónomo', model: process.env.OPENAI_MODEL_AGENT, system: 'Actúa como un agente autónomo práctico. Entiende el objetivo, divide el trabajo en pasos, usa las herramientas disponibles cuando aporten valor y entrega una respuesta concreta y ejecutable. No te limites a describir lo que podrías hacer: realiza el trabajo dentro de tus capacidades y distingue con claridad lo que sí ejecutaste de lo que requiere una acción externa.' },
 };
 const safeGuardrail = 'Respeta la ley y no ayudes a explotar menores, causar violencia extrema, fabricar armas o ejecutar ciberataques maliciosos. Para seguridad informática legítima, ofrece análisis defensivo y mitigaciones.';
 let pool: Pool | null = null;
@@ -111,7 +111,7 @@ async function callCompatibleProvider(profile: Profile, messages: ChatItem[], co
 async function callPollinations(profile: Profile, messages: ChatItem[], context: ContextItem[], thoughtLevel = 'medium') {
   const latest = messages.slice(-8).map((item) => `${item.role.toUpperCase()}: ${item.content}`).join('\n');
   const contextBlock = context.length ? `\nARCHIVOS:\n${context.map((item) => `${item.name}: ${item.content.slice(0, 6000)}`).join('\n')}` : '';
-  const prompt = `Eres CleusForge, perfil ${profileConfig[profile].label}. Nivel de pensamiento: ${thoughtLevel}. ${profileConfig[profile].system} ${safeGuardrail}\n${latest}${contextBlock}\nASSISTANT:`;
+  const prompt = `Eres CleusForge y trabajas en español salvo que la persona pida otro idioma. Perfil: ${profileConfig[profile].label}. Nivel de pensamiento: ${thoughtLevel}. ${profileConfig[profile].system} ${safeGuardrail}\nReglas de ejecución: responde directamente a la última solicitud; para tareas legítimas y permitidas, intenta resolverlas en lugar de contestar con una negativa vaga; no inventes herramientas, resultados ni acceso a cuentas; si una acción no está disponible, ofrece el siguiente paso concreto. No incluy mensajes promocionales sobre conectar una API key.\n${latest}${contextBlock}\nASSISTANT:`;
   const url = `https://text.pollinations.ai/${encodeURIComponent(prompt)}?model=openai&seed=${Math.floor(Math.random() * 100000)}`;
   const response = await fetch(url, { headers: { 'User-Agent': 'CleusForge/0.2' } });
   if (!response.ok) throw new Error(`Pollinations respondió ${response.status}.`);
@@ -129,7 +129,9 @@ async function searchWeb(query: string) {
 
 function localReply(profile: Profile, prompt: string, context: ContextItem[]) {
   const contextLine = context.length ? `\n\nHe tenido en cuenta ${context.length} archivo${context.length > 1 ? 's' : ''}: ${context.map((item) => item.name).join(', ')}.` : '';
-  return `El router ${profileConfig[profile].label} está activo. Para “${prompt.slice(0, 120)}${prompt.length > 120 ? '…' : ''}”, puedo dividir el trabajo en objetivo, contexto, ejecución y verificación.${contextLine}\n\nConecta una API key opcional si quieres cambiar a un modelo privado más potente.`;
+  return profile === 'agent'
+    ? `He recibido tu solicitud: “${prompt.slice(0, 160)}${prompt.length > 160 ? '…' : ''}”.\n\nPuedo trabajarla como agente: primero fijo el objetivo, después ejecuto las acciones disponibles y finalmente te entrego el resultado y las verificaciones.${contextLine}\n\nPara tareas que necesiten acceso a una cuenta, archivos externos o un servicio privado, te indicaré exactamente qué paso queda pendiente.`
+    : `El router ${profileConfig[profile].label} está activo. Para “${prompt.slice(0, 120)}${prompt.length > 120 ? '…' : ''}”, puedo dividir el trabajo en objetivo, contexto, ejecución y verificación.${contextLine}`;
 }
 
 function safeMath(expression: string) {
