@@ -6,12 +6,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
+import { spawn } from 'node:child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const isCompiled = path.basename(path.resolve(__dirname, '..')) === 'dist-server';
 const rootDir = isCompiled ? path.resolve(__dirname, '../..') : path.resolve(__dirname, '..');
 const port = Number(process.env.PORT || 3000);
+const generatedDir = path.join(process.cwd(), 'generated');
+fs.mkdirSync(generatedDir, { recursive: true });
 
 type Profile = 'fast' | 'smartest' | 'coding' | 'agent';
 type ChatItem = { role: 'user' | 'assistant' | 'system'; content: string };
@@ -97,12 +100,12 @@ async function persistMessage(sessionId: string, conversationId: string, item: C
   await db('UPDATE cf_conversations SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', [conversationId]);
 }
 
-async function callCompatibleProvider(profile: Profile, messages: ChatItem[], context: ContextItem[], providerKey?: string) {
-  const apiKey = providerKey || process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY;
-  const baseUrl = (process.env.OPENAI_BASE_URL || 'https://openrouter.ai/api/v1').replace(/\/$/, '');
+async function callCompatibleProvider(profile: Profile, messages: ChatItem[], context: ContextItem[], providerKey?: string, providerBaseUrl?: string, requestedModel?: string) {
+  const apiKey = providerKey || process.env.LLM_API_KEY || process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY;
+  const baseUrl = (providerBaseUrl || process.env.LLM_BASE_URL || process.env.OPENAI_BASE_URL || 'https://openrouter.ai/api/v1').replace(/\/$/, '');
   if (!apiKey) return null;
   const contextBlock = context.length ? `\n\nContexto adjunto:\n${context.map((item) => `### ${item.name}\n${item.content}`).join('\n\n')}` : '';
-  const response = await fetch(`${baseUrl}/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }, body: JSON.stringify({ model: profileConfig[profile].model, messages: [{ role: 'system', content: `${profileConfig[profile].system}\n${safeGuardrail}${contextBlock}` }, ...messages.slice(-18)], temperature: profile === 'fast' ? 0.5 : 0.3 }) });
+  const response = await fetch(`${baseUrl}/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }, body: JSON.stringify({ model: requestedModel || profileConfig[profile].model || process.env.LLM_MODEL || 'dolphin-mistral-24b-venice-edition', messages: [{ role: 'system', content: `${profileConfig[profile].system}\n${safeGuardrail}${contextBlock}` }, ...messages.slice(-18)], temperature: profile === 'fast' ? 0.5 : 0.3 }) });
   if (!response.ok) throw new Error(`Proveedor IA respondió ${response.status}.`);
   const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
   return data.choices?.[0]?.message?.content || null;
@@ -127,6 +130,40 @@ async function searchWeb(query: string) {
   return { abstract: data.AbstractText || 'No se encontró un resumen directo.', url: data.AbstractURL, related: (data.RelatedTopics || []).slice(0, 4).map((item) => ({ text: item.Text, url: item.FirstURL })).filter((item) => item.text) };
 }
 
+async function readWebpage(target: string) {
+  const url = new URL(target);
+  if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Solo se pueden leer URLs HTTP o HTTPS.');
+  const response = await fetch(url, { headers: { 'User-Agent': 'CleusForge/0.3' }, signal: AbortSignal.timeout(12_000) });
+  if (!response.ok) throw new Error(`La página respondió ${response.status}.`);
+  const html = await response.text();
+  return html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<[^>]+>/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 18_000);
+}
+
+async function executeCode(language: 'python' | 'javascript', code: string) {
+  if (!code.trim() || code.length > 20_000) throw new Error('El código está vacío o supera el límite de 20.000 caracteres.');
+  const piston = await fetch('https://emkc.org/api/v2/piston/execute', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ language: language === 'javascript' ? 'javascript' : 'python', version: '*', files: [{ content: code }] }), signal: AbortSignal.timeout(12_000) });
+  if (piston.ok) {
+    const data = await piston.json() as { run?: { stdout?: string; stderr?: string } };
+    return `${data.run?.stdout || ''}${data.run?.stderr ? `\n${data.run.stderr}` : ''}`.trim().slice(0, 20_000);
+  }
+  return new Promise<string>((resolve, reject) => {
+    const child = spawn(language === 'javascript' ? 'node' : 'python3', language === 'javascript' ? ['--max-old-space-size=128', '-e', code] : ['-I', '-c', code], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let output = '';
+    child.stdout.on('data', (chunk) => { output += chunk.toString(); });
+    child.stderr.on('data', (chunk) => { output += chunk.toString(); });
+    const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('La ejecución superó los 10 segundos.')); }, 10_000);
+    child.on('error', (error) => { clearTimeout(timer); reject(error); });
+    child.on('close', () => { clearTimeout(timer); resolve(output.trim().slice(0, 20_000)); });
+  });
+}
+
+async function createFile(name: string, content: string) {
+  const safeName = path.basename(name).replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, 120) || 'resultado.txt';
+  const finalName = `${Date.now()}-${safeName}`;
+  fs.writeFileSync(path.join(generatedDir, finalName), content.slice(0, 200_000), 'utf8');
+  return { name: safeName, url: `/generated/${finalName}` };
+}
+
 function localReply(profile: Profile, prompt: string, context: ContextItem[]) {
   const contextLine = context.length ? `\n\nHe tenido en cuenta ${context.length} archivo${context.length > 1 ? 's' : ''}: ${context.map((item) => item.name).join(', ')}.` : '';
   return profile === 'agent'
@@ -146,6 +183,11 @@ app.use(sessionMiddleware);
 
 app.get('/api/health', (_request, response) => response.json({ ok: true, service: 'cleusforge-api', provider: Boolean(process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY), database: Boolean(pool), timestamp: new Date().toISOString() }));
 app.get('/api/models', (_request, response) => response.json(Object.entries(profileConfig).map(([id, profile]) => ({ id, label: profile.label, model: profile.model || 'pollinations-public' }))));
+app.post('/api/execute', async (request: Request, response: Response) => {
+  const body = request.body as { language?: 'python' | 'javascript'; code?: string };
+  if (body.language !== 'python' && body.language !== 'javascript') return response.status(400).json({ error: 'language debe ser python o javascript.' });
+  try { return response.json({ ok: true, output: await executeCode(body.language, String(body.code || '')) }); } catch (error) { return response.status(502).json({ error: (error as Error).message }); }
+});
 
 app.get('/api/session', async (request: RequestWithSession, response) => {
   const sessionId = request.sessionId!;
@@ -193,7 +235,7 @@ app.post('/api/chat', async (request: RequestWithSession, response: Response) =>
   if (!sessionRate || rateNow - sessionRate.startedAt > 60_000) rateLimits.set(request.sessionId!, { startedAt: rateNow, count: 1 });
   else if (sessionRate.count >= 30) return response.status(429).json({ error: 'Límite temporal alcanzado. Espera un minuto.' });
   else sessionRate.count += 1;
-  const body = request.body as { model?: Profile; messages?: ChatItem[]; context?: ContextItem[]; providerKey?: string; thoughtLevel?: string; conversationId?: string };
+  const body = request.body as { model?: Profile; messages?: ChatItem[]; context?: ContextItem[]; providerKey?: string; providerBaseUrl?: string; requestedModel?: string; thoughtLevel?: string; conversationId?: string };
   const profile = body.model && body.model in profileConfig ? body.model : 'agent';
   const safeMessages = (body.messages || []).filter((item) => item && (item.role === 'user' || item.role === 'assistant')).slice(-20);
   const context = Array.isArray(body.context) ? body.context.slice(0, 8) : [];
@@ -208,19 +250,27 @@ app.post('/api/chat', async (request: RequestWithSession, response: Response) =>
       const results = await searchWeb(lastUserMessage);
       enrichedMessages = [...safeMessages, { role: 'system', content: `Resultados web actuales:\n${results.abstract}\n${results.url || ''}\n${results.related.map((item) => `${item.text} ${item.url || ''}`).join('\n')}` }];
     }
+    const urlMatch = lastUserMessage.match(/https?:\/\/[^\s)]+/i);
+    if (profile === 'agent' && urlMatch) {
+      events.push({ label: 'Leyendo página web', status: 'completed' });
+      const pageText = await readWebpage(urlMatch[0]);
+      enrichedMessages = [...enrichedMessages, { role: 'system', content: `Contenido extraído de ${urlMatch[0]}:\n${pageText}` }];
+    }
     if (profile === 'agent' && /\b(imagen|ilustración|visual|genera|dibuja|poster)\b/i.test(lastUserMessage)) {
       events.push({ label: 'Generando imagen', status: 'completed' });
       image = `https://image.pollinations.ai/prompt/${encodeURIComponent(lastUserMessage)}?width=1024&height=768&nologo=true&enhance=true`;
     }
-    if (profile === 'agent' && /\b(calcula|cálculo|ejecuta|resultado|suma|promedio)\b/i.test(lastUserMessage)) {
+    const codeMatch = lastUserMessage.match(/```(python|javascript|js)?\s*([\s\S]*?)```/i);
+    if (profile === 'agent' && codeMatch) {
+      const language = (codeMatch[1] || (codeMatch[2].includes('console.log') ? 'javascript' : 'python')).toLowerCase() === 'js' ? 'javascript' : ((codeMatch[1] || 'python').toLowerCase() as 'python' | 'javascript');
+      const output = await executeCode(language, codeMatch[2]);
+      enrichedMessages = [...enrichedMessages, { role: 'system', content: `Resultado de execute_code (${language}):\n${output || '(sin salida)'}` }];
+      events.push({ label: `Código ejecutado · ${language}`, status: 'completed' });
+    } else if (profile === 'agent' && /\b(calcula|cálculo|resultado|suma|promedio)\b/i.test(lastUserMessage)) {
       const expression = lastUserMessage.match(/[0-9][0-9+\-*/().,%\s]{2,}/)?.[0]?.trim();
-      if (expression) {
-        const result = safeMath(expression);
-        enrichedMessages = [...enrichedMessages, { role: 'system', content: `Resultado de herramienta matemática para ${expression}: ${result}` }];
-        events.push({ label: `Código seguro: ${result}`, status: 'completed' });
-      }
+      if (expression) { const result = safeMath(expression); enrichedMessages = [...enrichedMessages, { role: 'system', content: `Resultado de herramienta matemática para ${expression}: ${result}` }]; events.push({ label: `Cálculo ejecutado: ${result}`, status: 'completed' }); }
     }
-    let answer = await callCompatibleProvider(profile, enrichedMessages, context, body.providerKey);
+    let answer = await callCompatibleProvider(profile, enrichedMessages, context, body.providerKey, body.providerBaseUrl, body.requestedModel);
     if (!answer) answer = await callPollinations(profile, enrichedMessages, context, body.thoughtLevel || 'medium').catch(() => null);
     if (!answer) answer = localReply(profile, lastUserMessage, context);
     if (/\b(canvas|lienzo|documento|escribe|actualiza el archivo)\b/i.test(lastUserMessage)) {
@@ -231,11 +281,16 @@ app.post('/api/chat', async (request: RequestWithSession, response: Response) =>
       memory.canvas.set(`${request.sessionId}:${canvas.name}`, { id: documentId, sessionId: request.sessionId!, ...canvas, updatedAt: now().toISOString() });
       events.push({ label: 'Canvas actualizado', status: 'completed' });
     }
+    let file: { name: string; url: string } | undefined;
+    if (profile === 'agent' && /\b(crea|genera|guarda|descargable|archivo|script|html)\b/i.test(lastUserMessage)) {
+      file = await createFile(lastUserMessage.match(/(?:archivo|file)\s+([\w.-]+)/i)?.[1] || 'resultado.txt', answer);
+      events.push({ label: `Archivo creado · ${file.name}`, status: 'completed' });
+    }
     const conversationId = await getConversation(request.sessionId!, body.conversationId);
     await persistMessage(request.sessionId!, conversationId, { role: 'user', content: lastUserMessage }, profile);
     await persistMessage(request.sessionId!, conversationId, { role: 'assistant', content: answer }, profile);
     for (const item of context) await db('INSERT INTO cf_context_files (id, session_id, name, size_label, mime_type, content) VALUES (?, ?, ?, ?, ?, ?)', [makeId(), request.sessionId, item.name, item.size || '', item.type || '', item.content]);
-    response.json({ answer, profile, events, image, canvas, conversationId, provider: body.providerKey || process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY ? 'compatible' : 'pollinations-public' });
+    response.json({ answer: file ? `${answer}\n\nArchivo descargable: ${file.url}` : answer, profile, events, image, canvas, file, conversationId, provider: body.providerKey || body.providerBaseUrl || process.env.LLM_API_KEY || process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY ? 'compatible' : 'pollinations-public' });
   } catch (error) {
     response.status(200).json({ answer: `${localReply(profile, lastUserMessage, context)}\n\nNota del router: ${(error as Error).message}`, profile, events, provider: 'fallback-local' });
   }
@@ -260,6 +315,7 @@ app.post('/api/tools/code', (request: Request, response: Response) => {
 });
 
 const clientDist = path.join(rootDir, 'dist');
+app.use('/generated', express.static(generatedDir));
 if (fs.existsSync(clientDist)) { app.use(express.static(clientDist)); app.get('*', (_request, response) => response.sendFile(path.join(clientDist, 'index.html'))); }
 
 await initDatabase();
