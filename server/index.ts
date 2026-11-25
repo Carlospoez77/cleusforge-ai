@@ -22,12 +22,12 @@ type ContextItem = { name: string; content: string; size?: string; type?: string
 type RequestWithSession = Request & { sessionId?: string };
 
 const profileConfig: Record<Profile, { label: string; model?: string; system: string }> = {
-  fast: { label: 'Modo Rápido', model: process.env.OPENAI_MODEL_FAST, system: 'Responde de forma breve, clara y accionable. Evita rodeos.' },
-  smartest: { label: 'Razonamiento Profundo', model: process.env.OPENAI_MODEL_SMARTEST, system: 'Analiza supuestos y alternativas. Responde de forma objetiva, directa y sin sermones genéricos.' },
-  coding: { label: 'Codificación', model: process.env.OPENAI_MODEL_CODING, system: 'Actúa como ingeniero senior. Da código reproducible, pruebas y mitigaciones de seguridad.' },
-  agent: { label: 'Agente Autónomo', model: process.env.OPENAI_MODEL_AGENT, system: 'Actúa como un agente autónomo práctico. Entiende el objetivo, divide el trabajo en pasos, usa las herramientas disponibles cuando aporten valor y entrega una respuesta concreta y ejecutable. No te limites a describir lo que podrías hacer: realiza el trabajo dentro de tus capacidades y distingue con claridad lo que sí ejecutaste de lo que requiere una acción externa.' },
+  fast: { label: 'Modo RÃ¡pido', model: process.env.OPENAI_MODEL_FAST, system: 'Responde de forma breve, clara y accionable. Evita rodeos.' },
+  smartest: { label: 'Razonamiento Profundo', model: process.env.OPENAI_MODEL_SMARTEST, system: 'Analiza supuestos y alternativas. Responde de forma objetiva, directa y sin sermones genÃ©ricos.' },
+  coding: { label: 'CodificaciÃ³n', model: process.env.OPENAI_MODEL_CODING, system: 'ActÃºa como ingeniero senior. Da cÃ³digo reproducible, pruebas y mitigaciones de seguridad.' },
+  agent: { label: 'Agente AutÃ³nomo', model: process.env.OPENAI_MODEL_AGENT, system: 'ActÃºa como un agente autÃ³nomo prÃ¡ctico. Entiende el objetivo, divide el trabajo en pasos, usa las herramientas disponibles cuando aporten valor y entrega una respuesta concreta y ejecutable. No te limites a describir lo que podrÃ­as hacer: realiza el trabajo dentro de tus capacidades y distingue con claridad lo que sÃ­ ejecutaste de lo que requiere una acciÃ³n externa.' },
 };
-const safeGuardrail = 'Respeta la ley y no ayudes a explotar menores, causar violencia extrema, fabricar armas o ejecutar ciberataques maliciosos. Para seguridad informática legítima, ofrece análisis defensivo y mitigaciones.';
+const safeGuardrail = 'Respeta la ley y no ayudes a explotar menores, causar violencia extrema, fabricar armas o ejecutar ciberataques maliciosos. Para seguridad informÃ¡tica legÃ­tima, ofrece anÃ¡lisis defensivo y mitigaciones.';
 let pool: Pool | null = null;
 
 const makeId = () => crypto.randomBytes(16).toString('hex');
@@ -89,8 +89,8 @@ async function getConversation(sessionId: string, requestedId?: string) {
   const existing = rows?.[0] as { id?: string } | undefined;
   if (existing?.id) return existing.id;
   const id = makeId();
-  await db('INSERT INTO cf_conversations (id, session_id, title) VALUES (?, ?, ?)', [id, sessionId, 'Diseño del agente autónomo']);
-  memory.conversations.set(id, { id, sessionId, title: 'Diseño del agente autónomo', updatedAt: now().toISOString() });
+  await db('INSERT INTO cf_conversations (id, session_id, title) VALUES (?, ?, ?)', [id, sessionId, 'DiseÃ±o del agente autÃ³nomo']);
+  memory.conversations.set(id, { id, sessionId, title: 'DiseÃ±o del agente autÃ³nomo', updatedAt: now().toISOString() });
   return id;
 }
 
@@ -106,7 +106,7 @@ async function callCompatibleProvider(profile: Profile, messages: ChatItem[], co
   if (!apiKey) return null;
   const contextBlock = context.length ? `\n\nContexto adjunto:\n${context.map((item) => `### ${item.name}\n${item.content}`).join('\n\n')}` : '';
   const response = await fetch(`${baseUrl}/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }, body: JSON.stringify({ model: requestedModel || profileConfig[profile].model || process.env.LLM_MODEL || 'dolphin-mistral-24b-venice-edition', messages: [{ role: 'system', content: `${profileConfig[profile].system}\n${safeGuardrail}${contextBlock}` }, ...messages.slice(-18)], temperature: profile === 'fast' ? 0.5 : 0.3 }) });
-  if (!response.ok) throw new Error(`Proveedor IA respondió ${response.status}.`);
+  if (!response.ok) throw new Error(`Proveedor IA respondiÃ³ ${response.status}.`);
   const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
   return data.choices?.[0]?.message?.content || null;
 }
@@ -114,10 +114,10 @@ async function callCompatibleProvider(profile: Profile, messages: ChatItem[], co
 async function callPollinations(profile: Profile, messages: ChatItem[], context: ContextItem[], thoughtLevel = 'medium') {
   const latest = messages.slice(-8).map((item) => `${item.role.toUpperCase()}: ${item.content}`).join('\n');
   const contextBlock = context.length ? `\nARCHIVOS:\n${context.map((item) => `${item.name}: ${item.content.slice(0, 6000)}`).join('\n')}` : '';
-  const prompt = `Eres CleusForge y trabajas en español salvo que la persona pida otro idioma. Perfil: ${profileConfig[profile].label}. Nivel de pensamiento: ${thoughtLevel}. ${profileConfig[profile].system} ${safeGuardrail}\nReglas de ejecución: responde directamente a la última solicitud; para tareas legítimas y permitidas, intenta resolverlas en lugar de contestar con una negativa vaga; no inventes herramientas, resultados ni acceso a cuentas; si una acción no está disponible, ofrece el siguiente paso concreto. No incluy mensajes promocionales sobre conectar una API key.\n${latest}${contextBlock}\nASSISTANT:`;
+  const prompt = `Eres CleusForge y trabajas en espaÃ±ol salvo que la persona pida otro idioma. Perfil: ${profileConfig[profile].label}. Nivel de pensamiento: ${thoughtLevel}. ${profileConfig[profile].system} ${safeGuardrail}\nReglas de ejecuciÃ³n: responde directamente a la Ãºltima solicitud; para tareas legÃ­timas y permitidas, intenta resolverlas en lugar de contestar con una negativa vaga; no inventes herramientas, resultados ni acceso a cuentas; si una acciÃ³n no estÃ¡ disponible, ofrece el siguiente paso concreto. No incluy mensajes promocionales sobre conectar una API key.\n${latest}${contextBlock}\nASSISTANT:`;
   const url = `https://text.pollinations.ai/${encodeURIComponent(prompt)}?model=openai&seed=${Math.floor(Math.random() * 100000)}`;
   const response = await fetch(url, { headers: { 'User-Agent': 'CleusForge/0.2' } });
-  if (!response.ok) throw new Error(`Pollinations respondió ${response.status}.`);
+  if (!response.ok) throw new Error(`Pollinations respondiÃ³ ${response.status}.`);
   const text = (await response.text()).trim();
   return text || null;
 }
@@ -125,33 +125,37 @@ async function callPollinations(profile: Profile, messages: ChatItem[], context:
 async function searchWeb(query: string) {
   const endpoint = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
   const response = await fetch(endpoint, { headers: { 'User-Agent': 'CleusForge/0.2' } });
-  if (!response.ok) throw new Error('Búsqueda no disponible.');
+  if (!response.ok) throw new Error('BÃºsqueda no disponible.');
   const data = (await response.json()) as { AbstractText?: string; AbstractURL?: string; RelatedTopics?: Array<{ Text?: string; FirstURL?: string }> };
-  return { abstract: data.AbstractText || 'No se encontró un resumen directo.', url: data.AbstractURL, related: (data.RelatedTopics || []).slice(0, 4).map((item) => ({ text: item.Text, url: item.FirstURL })).filter((item) => item.text) };
+  return { abstract: data.AbstractText || 'No se encontrÃ³ un resumen directo.', url: data.AbstractURL, related: (data.RelatedTopics || []).slice(0, 4).map((item) => ({ text: item.Text, url: item.FirstURL })).filter((item) => item.text) };
 }
 
 async function readWebpage(target: string) {
   const url = new URL(target);
   if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Solo se pueden leer URLs HTTP o HTTPS.');
   const response = await fetch(url, { headers: { 'User-Agent': 'CleusForge/0.3' }, signal: AbortSignal.timeout(12_000) });
-  if (!response.ok) throw new Error(`La página respondió ${response.status}.`);
+  if (!response.ok) throw new Error(`La pÃ¡gina respondiÃ³ ${response.status}.`);
   const html = await response.text();
   return html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<[^>]+>/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 18_000);
 }
 
 async function executeCode(language: 'python' | 'javascript', code: string) {
-  if (!code.trim() || code.length > 20_000) throw new Error('El código está vacío o supera el límite de 20.000 caracteres.');
-  const piston = await fetch('https://emkc.org/api/v2/piston/execute', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ language: language === 'javascript' ? 'javascript' : 'python', version: '*', files: [{ content: code }] }), signal: AbortSignal.timeout(12_000) });
-  if (piston.ok) {
-    const data = await piston.json() as { run?: { stdout?: string; stderr?: string } };
-    return `${data.run?.stdout || ''}${data.run?.stderr ? `\n${data.run.stderr}` : ''}`.trim().slice(0, 20_000);
+  if (!code.trim() || code.length > 20_000) throw new Error('El cÃ³digo estÃ¡ vacÃ­o o supera el lÃ­mite de 20.000 caracteres.');
+  try {
+    const piston = await fetch('https://emkc.org/api/v2/piston/execute', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ language: language === 'javascript' ? 'javascript' : 'python', version: '*', files: [{ content: code }] }), signal: AbortSignal.timeout(12_000) });
+    if (piston.ok) {
+      const data = await piston.json() as { run?: { stdout?: string; stderr?: string } };
+      return `${data.run?.stdout || ''}${data.run?.stderr ? `\n${data.run.stderr}` : ''}`.trim().slice(0, 20_000);
+    }
+  } catch (error) {
+    console.warn('Piston unavailable; using isolated local runner:', (error as Error).message);
   }
   return new Promise<string>((resolve, reject) => {
     const child = spawn(language === 'javascript' ? 'node' : 'python3', language === 'javascript' ? ['--max-old-space-size=128', '-e', code] : ['-I', '-c', code], { stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
     child.stdout.on('data', (chunk) => { output += chunk.toString(); });
     child.stderr.on('data', (chunk) => { output += chunk.toString(); });
-    const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('La ejecución superó los 10 segundos.')); }, 10_000);
+    const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('La ejecuciÃ³n superÃ³ los 10 segundos.')); }, 10_000);
     child.on('error', (error) => { clearTimeout(timer); reject(error); });
     child.on('close', () => { clearTimeout(timer); resolve(output.trim().slice(0, 20_000)); });
   });
@@ -167,12 +171,12 @@ async function createFile(name: string, content: string) {
 function localReply(profile: Profile, prompt: string, context: ContextItem[]) {
   const contextLine = context.length ? `\n\nHe tenido en cuenta ${context.length} archivo${context.length > 1 ? 's' : ''}: ${context.map((item) => item.name).join(', ')}.` : '';
   return profile === 'agent'
-    ? `He recibido tu solicitud: “${prompt.slice(0, 160)}${prompt.length > 160 ? '…' : ''}”.\n\nPuedo trabajarla como agente: primero fijo el objetivo, después ejecuto las acciones disponibles y finalmente te entrego el resultado y las verificaciones.${contextLine}\n\nPara tareas que necesiten acceso a una cuenta, archivos externos o un servicio privado, te indicaré exactamente qué paso queda pendiente.`
-    : `El router ${profileConfig[profile].label} está activo. Para “${prompt.slice(0, 120)}${prompt.length > 120 ? '…' : ''}”, puedo dividir el trabajo en objetivo, contexto, ejecución y verificación.${contextLine}`;
+    ? `He recibido tu solicitud: â€œ${prompt.slice(0, 160)}${prompt.length > 160 ? 'â€¦' : ''}â€.\n\nPuedo trabajarla como agente: primero fijo el objetivo, despuÃ©s ejecuto las acciones disponibles y finalmente te entrego el resultado y las verificaciones.${contextLine}\n\nPara tareas que necesiten acceso a una cuenta, archivos externos o un servicio privado, te indicarÃ© exactamente quÃ© paso queda pendiente.`
+    : `El router ${profileConfig[profile].label} estÃ¡ activo. Para â€œ${prompt.slice(0, 120)}${prompt.length > 120 ? 'â€¦' : ''}â€, puedo dividir el trabajo en objetivo, contexto, ejecuciÃ³n y verificaciÃ³n.${contextLine}`;
 }
 
 function safeMath(expression: string) {
-  if (!expression || expression.length > 500 || !/^[0-9+\-*/().,%\s]+$/.test(expression)) throw new Error('Solo se permiten expresiones matemáticas acotadas.');
+  if (!expression || expression.length > 500 || !/^[0-9+\-*/().,%\s]+$/.test(expression)) throw new Error('Solo se permiten expresiones matemÃ¡ticas acotadas.');
   return Function(`"use strict"; return (${expression})`)();
 }
 
@@ -213,7 +217,7 @@ app.post('/api/chat/stream', async (request: RequestWithSession, response: Respo
       body: JSON.stringify(request.body),
     });
     const payload = await upstream.json() as { answer?: string; [key: string]: unknown };
-    if (!upstream.ok) throw new Error(String(payload.error || 'El router rechazó la solicitud.'));
+    if (!upstream.ok) throw new Error(String(payload.error || 'El router rechazÃ³ la solicitud.'));
     const answer = String(payload.answer || '');
     response.write(`event: status\ndata: ${JSON.stringify({ status: 'connected', provider: payload.provider })}\n\n`);
     const tokens = answer.match(/\S+\s*/g) || [];
@@ -233,7 +237,7 @@ app.post('/api/chat', async (request: RequestWithSession, response: Response) =>
   const sessionRate = rateLimits.get(request.sessionId!);
   const rateNow = Date.now();
   if (!sessionRate || rateNow - sessionRate.startedAt > 60_000) rateLimits.set(request.sessionId!, { startedAt: rateNow, count: 1 });
-  else if (sessionRate.count >= 30) return response.status(429).json({ error: 'Límite temporal alcanzado. Espera un minuto.' });
+  else if (sessionRate.count >= 30) return response.status(429).json({ error: 'LÃ­mite temporal alcanzado. Espera un minuto.' });
   else sessionRate.count += 1;
   const body = request.body as { model?: Profile; messages?: ChatItem[]; context?: ContextItem[]; providerKey?: string; providerBaseUrl?: string; requestedModel?: string; thoughtLevel?: string; conversationId?: string };
   const profile = body.model && body.model in profileConfig ? body.model : 'agent';
@@ -246,17 +250,17 @@ app.post('/api/chat', async (request: RequestWithSession, response: Response) =>
   try {
     let enrichedMessages = safeMessages;
     if (profile === 'agent' && /\b(web|internet|actual|actualizado|investiga|fuentes|noticias|buscar)\b/i.test(lastUserMessage)) {
-      events.push({ label: 'Búsqueda web', status: 'completed' });
+      events.push({ label: 'BÃºsqueda web', status: 'completed' });
       const results = await searchWeb(lastUserMessage);
       enrichedMessages = [...safeMessages, { role: 'system', content: `Resultados web actuales:\n${results.abstract}\n${results.url || ''}\n${results.related.map((item) => `${item.text} ${item.url || ''}`).join('\n')}` }];
     }
     const urlMatch = lastUserMessage.match(/https?:\/\/[^\s)]+/i);
     if (profile === 'agent' && urlMatch) {
-      events.push({ label: 'Leyendo página web', status: 'completed' });
+      events.push({ label: 'Leyendo pÃ¡gina web', status: 'completed' });
       const pageText = await readWebpage(urlMatch[0]);
-      enrichedMessages = [...enrichedMessages, { role: 'system', content: `Contenido extraído de ${urlMatch[0]}:\n${pageText}` }];
+      enrichedMessages = [...enrichedMessages, { role: 'system', content: `Contenido extraÃ­do de ${urlMatch[0]}:\n${pageText}` }];
     }
-    if (profile === 'agent' && /\b(imagen|ilustración|visual|genera|dibuja|poster)\b/i.test(lastUserMessage)) {
+    if (profile === 'agent' && /\b(imagen|ilustraciÃ³n|visual|genera|dibuja|poster)\b/i.test(lastUserMessage)) {
       events.push({ label: 'Generando imagen', status: 'completed' });
       image = `https://image.pollinations.ai/prompt/${encodeURIComponent(lastUserMessage)}?width=1024&height=768&nologo=true&enhance=true`;
     }
@@ -265,10 +269,10 @@ app.post('/api/chat', async (request: RequestWithSession, response: Response) =>
       const language = (codeMatch[1] || (codeMatch[2].includes('console.log') ? 'javascript' : 'python')).toLowerCase() === 'js' ? 'javascript' : ((codeMatch[1] || 'python').toLowerCase() as 'python' | 'javascript');
       const output = await executeCode(language, codeMatch[2]);
       enrichedMessages = [...enrichedMessages, { role: 'system', content: `Resultado de execute_code (${language}):\n${output || '(sin salida)'}` }];
-      events.push({ label: `Código ejecutado · ${language}`, status: 'completed' });
-    } else if (profile === 'agent' && /\b(calcula|cálculo|resultado|suma|promedio)\b/i.test(lastUserMessage)) {
+      events.push({ label: `CÃ³digo ejecutado Â· ${language}`, status: 'completed' });
+    } else if (profile === 'agent' && /\b(calcula|cÃ¡lculo|resultado|suma|promedio)\b/i.test(lastUserMessage)) {
       const expression = lastUserMessage.match(/[0-9][0-9+\-*/().,%\s]{2,}/)?.[0]?.trim();
-      if (expression) { const result = safeMath(expression); enrichedMessages = [...enrichedMessages, { role: 'system', content: `Resultado de herramienta matemática para ${expression}: ${result}` }]; events.push({ label: `Cálculo ejecutado: ${result}`, status: 'completed' }); }
+      if (expression) { const result = safeMath(expression); enrichedMessages = [...enrichedMessages, { role: 'system', content: `Resultado de herramienta matemÃ¡tica para ${expression}: ${result}` }]; events.push({ label: `CÃ¡lculo ejecutado: ${result}`, status: 'completed' }); }
     }
     let answer = await callCompatibleProvider(profile, enrichedMessages, context, body.providerKey, body.providerBaseUrl, body.requestedModel);
     if (!answer) answer = await callPollinations(profile, enrichedMessages, context, body.thoughtLevel || 'medium').catch(() => null);
@@ -284,7 +288,7 @@ app.post('/api/chat', async (request: RequestWithSession, response: Response) =>
     let file: { name: string; url: string } | undefined;
     if (profile === 'agent' && /\b(crea|genera|guarda|descargable|archivo|script|html)\b/i.test(lastUserMessage)) {
       file = await createFile(lastUserMessage.match(/(?:archivo|file)\s+([\w.-]+)/i)?.[1] || 'resultado.txt', answer);
-      events.push({ label: `Archivo creado · ${file.name}`, status: 'completed' });
+      events.push({ label: `Archivo creado Â· ${file.name}`, status: 'completed' });
     }
     const conversationId = await getConversation(request.sessionId!, body.conversationId);
     await persistMessage(request.sessionId!, conversationId, { role: 'user', content: lastUserMessage }, profile);
