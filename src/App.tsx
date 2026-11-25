@@ -32,7 +32,6 @@ import {
   X,
   Zap,
 } from 'lucide-react';
-import { runPythonInBrowser } from './pyodideRunner';
 
 type ModelId = 'fast' | 'smartest' | 'coding' | 'agent';
 type Role = 'user' | 'assistant';
@@ -137,6 +136,8 @@ function App() {
   const [canvasSaved, setCanvasSaved] = useState(true);
   const [thoughtLevel, setThoughtLevel] = useState('medium');
   const [apiKey, setApiKey] = useState('');
+  const [baseUrl, setBaseUrl] = useState('');
+  const [modelName, setModelName] = useState('');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [activity, setActivity] = useState('');
   const [toolEvents, setToolEvents] = useState<Array<{ label: string; status: string }>>([]);
@@ -165,6 +166,8 @@ function App() {
 
   useEffect(() => {
     setApiKey(localStorage.getItem('cleusforge_api_key') || '');
+    setBaseUrl(localStorage.getItem('cleusforge_base_url') || '');
+    setModelName(localStorage.getItem('cleusforge_model') || '');
     setThoughtLevel(localStorage.getItem('cleusforge_thought_level') || 'medium');
     void fetch('/api/session').then((response) => response.json()).then((data) => {
       setSessionPersistent(Boolean(data.persistent));
@@ -223,21 +226,16 @@ function App() {
 
     try {
       const activityTimer = window.setTimeout(() => setActivity(activeModel === 'agent' ? 'Ejecutando herramientas…' : 'Redactando respuesta…'), 700);
-      let pythonContext: ContextFile | null = null;
-      if (activeModel === 'agent' && /\b(py(thon)?|código python|ejecuta este código)\b/i.test(trimmed) && /```/.test(trimmed)) {
-        setActivity('Ejecutando Python en sandbox del navegador…');
-        const code = trimmed.match(/```(?:python)?\s*([\s\S]*?)```/i)?.[1] || '';
-        const result = await runPythonInBrowser(code);
-        pythonContext = { id: `python-${Date.now()}`, name: 'sandbox-output.txt', size: `${result.length} caracteres`, type: 'text/plain', content: result };
-      }
       const response = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: activeModel,
           messages: conversation.map(({ role, content }) => ({ role, content })),
-          context: [...contextFiles, ...(pythonContext ? [pythonContext] : [])].map(({ name, content, size, type }) => ({ name, content, size, type })),
+          context: contextFiles.map(({ name, content, size, type }) => ({ name, content, size, type })),
           providerKey: apiKey || undefined,
+          providerBaseUrl: baseUrl || undefined,
+          requestedModel: modelName || undefined,
           thoughtLevel,
         }),
       });
@@ -385,7 +383,7 @@ function App() {
           <div className="composer-area">
             <div className="quick-actions">{quickPrompts.map(({ label, icon: Icon, prompt }) => <button key={label} onClick={() => setInput(prompt)}><Icon size={14} /> {label}</button>)}</div>
             <form className="composer" onSubmit={handleSubmit}>
-              <textarea ref={textareaRef} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void handleSubmit(); } }} placeholder="Escribe una pregunta o describe lo que quieres construir…" rows={2} />
+      <textarea ref={textareaRef} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void handleSubmit(); } }} placeholder="Escribe una pregunta o describe lo que quieres construir…" rows={2} />
               <div className="composer-toolbar"><div className="composer-tools"><input ref={fileInputRef} type="file" multiple hidden accept=".txt,.md,.csv,.json,.js,.ts,.tsx,.py" onChange={(event) => void addFiles(event.target.files)} /><button type="button" className="tool-button" onClick={() => fileInputRef.current?.click()}><Paperclip size={16} /> Adjuntar</button><button type="button" className="tool-button" onClick={() => setIsCanvasOpen(true)}><FileCode2 size={15} /> Añadir al canvas</button><span className="context-label"><span className="context-indicator" /> {contextSummary}</span></div><button className="send-button" type="submit" disabled={isSending || !input.trim()}><Send size={16} /> Enviar <kbd>↵</kbd></button></div>
             </form>
             <div className="composer-note">CleusForge puede equivocarse. Revisa las respuestas importantes antes de usarlas.</div>
@@ -399,7 +397,7 @@ function App() {
           <div className="canvas-footer"><span><Command size={12} /> Markdown</span><span>1.2 KB</span></div>
         </aside>}
       </div>
-      {isSettingsOpen && <div className="modal-backdrop" onClick={() => setIsSettingsOpen(false)}><section className="settings-modal" onClick={(event) => event.stopPropagation()}><div className="settings-header"><div><div className="eyebrow"><span className="eyebrow-line" /> AJUSTES LOCALES</div><h2>Conexión y razonamiento</h2></div><button className="icon-button subtle" onClick={() => setIsSettingsOpen(false)}><X size={17} /></button></div><p className="settings-copy">Puedes usar el router público sin configuración o añadir tu propia clave. La clave se guarda solo en este navegador y se envía únicamente con tus solicitudes.</p><label className="settings-label">OpenRouter / endpoint compatible<input type="password" value={apiKey} onChange={(event) => { setApiKey(event.target.value); localStorage.setItem('cleusforge_api_key', event.target.value); }} placeholder="sk-or-… (opcional)" /></label><label className="settings-label">Nivel de pensamiento<div className="thought-options">{['off', 'low', 'medium', 'high', 'max'].map((level) => <button key={level} className={thoughtLevel === level ? 'selected' : ''} onClick={() => { setThoughtLevel(level); localStorage.setItem('cleusforge_thought_level', level); }}>{level === 'medium' ? 'Medium' : level[0].toUpperCase() + level.slice(1)}</button>)}</div></label><div className="settings-footer"><span><span className="status-dot" /> {sessionPersistent ? 'Sesión persistente activa' : 'Sesión anónima lista'}</span><button className="send-button" onClick={() => setIsSettingsOpen(false)}><Check size={14} /> Listo</button></div></section></div>}
+      {isSettingsOpen && <div className="modal-backdrop" onClick={() => setIsSettingsOpen(false)}><section className="settings-modal" onClick={(event) => event.stopPropagation()}><div className="settings-header"><div><div className="eyebrow"><span className="eyebrow-line" /> AJUSTES LOCALES</div><h2>Conexión y razonamiento</h2></div><button className="icon-button subtle" onClick={() => setIsSettingsOpen(false)}><X size={17} /></button></div><p className="settings-copy">El agente usa herramientas del servidor para buscar, leer páginas, ejecutar código y crear archivos. Las claves se guardan solo en este navegador.</p><label className="settings-label">Endpoint compatible<input type="text" value={baseUrl} onChange={(event) => { setBaseUrl(event.target.value); localStorage.setItem('cleusforge_base_url', event.target.value); }} placeholder="https://api.venice.ai/api/v1 (opcional)" /></label><label className="settings-label">Modelo<input type="text" value={modelName} onChange={(event) => { setModelName(event.target.value); localStorage.setItem('cleusforge_model', event.target.value); }} placeholder="Dolphin-Mistral-24B-Venice-Edition (opcional)" /></label><label className="settings-label">API Key<input type="password" value={apiKey} onChange={(event) => { setApiKey(event.target.value); localStorage.setItem('cleusforge_api_key', event.target.value); }} placeholder="sk-… (opcional)" /></label><label className="settings-label">Nivel de pensamiento<div className="thought-options">{['off', 'low', 'medium', 'high', 'max'].map((level) => <button key={level} className={thoughtLevel === level ? 'selected' : ''} onClick={() => { setThoughtLevel(level); localStorage.setItem('cleusforge_thought_level', level); }}>{level === 'medium' ? 'Medium' : level[0].toUpperCase() + level.slice(1)}</button>)}</div></label><div className="settings-footer"><span><span className="status-dot" /> {sessionPersistent ? 'Sesión persistente activa' : 'Sesión anónima lista'}</span><button className="send-button" onClick={() => setIsSettingsOpen(false)}><Check size={14} /> Listo</button></div></section></div>}
     </div>
   );
 }
