@@ -128,7 +128,7 @@ async function searchWeb(query: string) {
   if (!response.ok) throw new Error('Búsqueda no disponible.');
   const data = (await response.json()) as { AbstractText?: string; AbstractURL?: string; RelatedTopics?: Array<{ Text?: string; FirstURL?: string }> };
   const related = (data.RelatedTopics || []).slice(0, 6).map((item) => ({ text: item.Text, url: item.FirstURL })).filter((item) => item.text);
-  if (data.AbstractText || related.length) return { abstract: data.AbstractText || 'Resultados relacionados encontrados.', url: data.AbstractURL, related };
+  if (related.length) return { abstract: data.AbstractText || 'Resultados relacionados encontrados.', url: data.AbstractURL, related };
   const rssResponse = await fetch(`https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=es-419&gl=US&ceid=US:es-419`, { headers: { 'User-Agent': 'Mozilla/5.0 CleusForge/0.3' }, signal: AbortSignal.timeout(12_000) });
   const rss = await rssResponse.text();
   const clean = (value: string) => value.replace(/<!\[CDATA\[|\]\]>/g, '').replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#x27;|&#39;/g, "'").replace(/\s+/g, ' ').trim();
