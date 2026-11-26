@@ -96,6 +96,14 @@ const modelProfiles: ModelProfile[] = [
   },
 ];
 
+const communityModels = [
+  { label: 'Dolphin Mistral 24B · Venice Edition', id: 'cognitivecomputations/dolphin-mistral-24b-venice-edition' },
+  { label: 'Qwen 2.5 Coder 32B', id: 'qwen/qwen-2.5-coder-32b-instruct' },
+  { label: 'DeepSeek Chat', id: 'deepseek/deepseek-chat' },
+  { label: 'Llama 3.3 70B Instruct', id: 'meta-llama/llama-3.3-70b-instruct' },
+  { label: 'Mistral Small 3.1 24B', id: 'mistralai/mistral-small-3.1-24b-instruct' },
+];
+
 const starterMessages: ChatMessage[] = [
   {
     id: 'welcome',
@@ -167,7 +175,7 @@ function App() {
   useEffect(() => {
     setApiKey(localStorage.getItem('cleusforge_api_key') || '');
     setBaseUrl(localStorage.getItem('cleusforge_base_url') || '');
-    setModelName(localStorage.getItem('cleusforge_model') || '');
+    setModelName(localStorage.getItem('cleusforge_model') || 'cognitivecomputations/dolphin-mistral-24b-venice-edition');
     setThoughtLevel(localStorage.getItem('cleusforge_thought_level') || 'medium');
     void fetch('/api/session').then((response) => response.json()).then((data) => {
       setSessionPersistent(Boolean(data.persistent));
@@ -397,7 +405,7 @@ function App() {
           <div className="canvas-footer"><span><Command size={12} /> Markdown</span><span>1.2 KB</span></div>
         </aside>}
       </div>
-      {isSettingsOpen && <div className="modal-backdrop" onClick={() => setIsSettingsOpen(false)}><section className="settings-modal" onClick={(event) => event.stopPropagation()}><div className="settings-header"><div><div className="eyebrow"><span className="eyebrow-line" /> AJUSTES LOCALES</div><h2>Conexión y razonamiento</h2></div><button className="icon-button subtle" onClick={() => setIsSettingsOpen(false)}><X size={17} /></button></div><p className="settings-copy">El agente usa herramientas del servidor para buscar, leer páginas, ejecutar código y crear archivos. Las claves se guardan solo en este navegador.</p><label className="settings-label">Endpoint compatible<input type="text" value={baseUrl} onChange={(event) => { setBaseUrl(event.target.value); localStorage.setItem('cleusforge_base_url', event.target.value); }} placeholder="https://api.venice.ai/api/v1 (opcional)" /></label><label className="settings-label">Modelo<input type="text" value={modelName} onChange={(event) => { setModelName(event.target.value); localStorage.setItem('cleusforge_model', event.target.value); }} placeholder="Dolphin-Mistral-24B-Venice-Edition (opcional)" /></label><label className="settings-label">API Key<input type="password" value={apiKey} onChange={(event) => { setApiKey(event.target.value); localStorage.setItem('cleusforge_api_key', event.target.value); }} placeholder="sk-… (opcional)" /></label><label className="settings-label">Nivel de pensamiento<div className="thought-options">{['off', 'low', 'medium', 'high', 'max'].map((level) => <button key={level} className={thoughtLevel === level ? 'selected' : ''} onClick={() => { setThoughtLevel(level); localStorage.setItem('cleusforge_thought_level', level); }}>{level === 'medium' ? 'Medium' : level[0].toUpperCase() + level.slice(1)}</button>)}</div></label><div className="settings-footer"><span><span className="status-dot" /> {sessionPersistent ? 'Sesión persistente activa' : 'Sesión anónima lista'}</span><button className="send-button" onClick={() => setIsSettingsOpen(false)}><Check size={14} /> Listo</button></div></section></div>}
+      {isSettingsOpen && <div className="modal-backdrop" onClick={() => setIsSettingsOpen(false)}><section className="settings-modal" onClick={(event) => event.stopPropagation()}><div className="settings-header"><div><div className="eyebrow"><span className="eyebrow-line" /> AJUSTES LOCALES</div><h2>Conexión y razonamiento</h2></div><button className="icon-button subtle" onClick={() => setIsSettingsOpen(false)}><X size={17} /></button></div><p className="settings-copy">El agente usa herramientas del servidor para buscar, leer páginas, ejecutar código y crear archivos. Las claves se guardan solo en este navegador.</p><label className="settings-label">Endpoint compatible<input type="text" value={baseUrl} onChange={(event) => { setBaseUrl(event.target.value); localStorage.setItem('cleusforge_base_url', event.target.value); }} placeholder="https://api.venice.ai/api/v1 (opcional)" /></label><label className="settings-label">Modelo<input type="text" value={modelName} onChange={(event) => { setModelName(event.target.value); localStorage.setItem('cleusforge_model', event.target.value); }} placeholder="cognitivecomputations/dolphin-mistral-24b-venice-edition" /><div className="model-presets">{communityModels.map((model) => <button type="button" key={model.id} onClick={() => { setModelName(model.id); localStorage.setItem('cleusforge_model', model.id); }}>{model.label}</button>)}</div></label><label className="settings-label">API Key<input type="password" value={apiKey} onChange={(event) => { setApiKey(event.target.value); localStorage.setItem('cleusforge_api_key', event.target.value); }} placeholder="sk-… (opcional)" /></label><label className="settings-label">Nivel de pensamiento<div className="thought-options">{['off', 'low', 'medium', 'high', 'max'].map((level) => <button key={level} className={thoughtLevel === level ? 'selected' : ''} onClick={() => { setThoughtLevel(level); localStorage.setItem('cleusforge_thought_level', level); }}>{level === 'medium' ? 'Medium' : level[0].toUpperCase() + level.slice(1)}</button>)}</div></label><div className="settings-footer"><span><span className="status-dot" /> {sessionPersistent ? 'Sesión persistente activa' : 'Sesión anónima lista'}</span><button className="send-button" onClick={() => setIsSettingsOpen(false)}><Check size={14} /> Listo</button></div></section></div>}
     </div>
   );
 }
