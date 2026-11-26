@@ -105,7 +105,7 @@ async function callCompatibleProvider(profile: Profile, messages: ChatItem[], co
   const baseUrl = (providerBaseUrl || process.env.LLM_BASE_URL || process.env.OPENAI_BASE_URL || 'https://openrouter.ai/api/v1').replace(/\/$/, '');
   if (!apiKey) return null;
   const contextBlock = context.length ? `\n\nContexto adjunto:\n${context.map((item) => `### ${item.name}\n${item.content}`).join('\n\n')}` : '';
-  const response = await fetch(`${baseUrl}/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }, body: JSON.stringify({ model: requestedModel || profileConfig[profile].model || process.env.LLM_MODEL || 'dolphin-mistral-24b-venice-edition', messages: [{ role: 'system', content: `${profileConfig[profile].system}\n${safeGuardrail}${contextBlock}` }, ...messages.slice(-18)], temperature: profile === 'fast' ? 0.5 : 0.3 }) });
+  const response = await fetch(`${baseUrl}/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }, body: JSON.stringify({ model: requestedModel || profileConfig[profile].model || process.env.LLM_MODEL || 'cognitivecomputations/dolphin-mistral-24b-venice-edition', messages: [{ role: 'system', content: `${profileConfig[profile].system}\n${safeGuardrail}${contextBlock}` }, ...messages.slice(-18)], temperature: profile === 'fast' ? 0.5 : 0.3 }) });
   if (!response.ok) throw new Error(`Proveedor IA respondió ${response.status}.`);
   const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
   return data.choices?.[0]?.message?.content || null;
@@ -127,7 +127,14 @@ async function searchWeb(query: string) {
   const response = await fetch(endpoint, { headers: { 'User-Agent': 'CleusForge/0.2' } });
   if (!response.ok) throw new Error('Búsqueda no disponible.');
   const data = (await response.json()) as { AbstractText?: string; AbstractURL?: string; RelatedTopics?: Array<{ Text?: string; FirstURL?: string }> };
-  return { abstract: data.AbstractText || 'No se encontró un resumen directo.', url: data.AbstractURL, related: (data.RelatedTopics || []).slice(0, 4).map((item) => ({ text: item.Text, url: item.FirstURL })).filter((item) => item.text) };
+  const related = (data.RelatedTopics || []).slice(0, 6).map((item) => ({ text: item.Text, url: item.FirstURL })).filter((item) => item.text);
+  if (data.AbstractText || related.length) return { abstract: data.AbstractText || 'Resultados relacionados encontrados.', url: data.AbstractURL, related };
+  const rssResponse = await fetch(`https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=es-419&gl=US&ceid=US:es-419`, { headers: { 'User-Agent': 'Mozilla/5.0 CleusForge/0.3' }, signal: AbortSignal.timeout(12_000) });
+  const rss = await rssResponse.text();
+  const clean = (value: string) => value.replace(/<!\[CDATA\[|\]\]>/g, '').replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#x27;|&#39;/g, "'").replace(/\s+/g, ' ').trim();
+  const matches = [...rss.matchAll(/<item>[\s\S]*?<title>([\s\S]*?)<\/title>[\s\S]*?<link>([\s\S]*?)<\/link>[\s\S]*?<pubDate>([\s\S]*?)<\/pubDate>[\s\S]*?<\/item>/gi)].slice(0, 6);
+  const fallbackRelated = matches.map((match) => ({ text: `${clean(match[1])} — ${clean(match[3])}`, url: clean(match[2]) }));
+  return { abstract: fallbackRelated.length ? 'Resultados actuales encontrados mediante búsqueda web.' : 'No se encontraron resultados para esa consulta.', url: fallbackRelated[0]?.url, related: fallbackRelated };
 }
 
 async function readWebpage(target: string) {
@@ -255,12 +262,13 @@ app.post('/api/chat', async (request: RequestWithSession, response: Response) =>
   const events: Array<{ label: string; status: string }> = [];
   let image: string | undefined;
   let canvas: { name: string; content: string } | undefined;
+  let webResults: Awaited<ReturnType<typeof searchWeb>> | undefined;
   try {
     let enrichedMessages = safeMessages;
     if (profile === 'agent' && /\b(web|internet|actual|actualizado|investiga|fuentes|noticias|buscar)\b/i.test(lastUserMessage)) {
       events.push({ label: 'Búsqueda web', status: 'completed' });
-      const results = await searchWeb(lastUserMessage);
-      enrichedMessages = [...safeMessages, { role: 'system', content: `Resultados web actuales:\n${results.abstract}\n${results.url || ''}\n${results.related.map((item) => `${item.text} ${item.url || ''}`).join('\n')}` }];
+      webResults = await searchWeb(lastUserMessage);
+      enrichedMessages = [...safeMessages, { role: 'system', content: `Resultados web actuales:\n${webResults.abstract}\n${webResults.url || ''}\n${webResults.related.map((item) => `${item.text} ${item.url || ''}`).join('\n')}` }];
     }
     const urlMatch = lastUserMessage.match(/https?:\/\/[^\s)]+/i);
     if (profile === 'agent' && urlMatch) {
@@ -285,6 +293,10 @@ app.post('/api/chat', async (request: RequestWithSession, response: Response) =>
     let answer = await callCompatibleProvider(profile, enrichedMessages, context, body.providerKey, body.providerBaseUrl, body.requestedModel);
     if (!answer) answer = await callPollinations(profile, enrichedMessages, context, body.thoughtLevel || 'medium').catch(() => null);
     if (!answer) answer = localReply(profile, lastUserMessage, context);
+    if (webResults && webResults.related.length) {
+      const sources = webResults.related.map((item, index) => `${index + 1}. ${item.text}${item.url ? `\n   ${item.url}` : ''}`).join('\n');
+      answer = `${answer}\n\nFuentes encontradas ahora mediante búsqueda web:\n${sources}`;
+    }
     let file: { name: string; url: string } | undefined;
     if (profile === 'agent' && /\b(crea|créame|construye|diseña|haz|genera)\b[\s\S]*\b(página|sitio|web|html)\b/i.test(lastUserMessage)) {
       file = await createWebPage(lastUserMessage, answer);
